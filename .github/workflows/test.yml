@@ -24,24 +24,28 @@ jobs:
         id: cache-solana
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.local/share/solana/install
-            ~/.cache/solana
-          key: solana-1.18.15-${{ runner.os }}-v2
+          path: ~/.local/share/solana/install
+          key: solana-1.18.15-linux-v3
 
       - name: Install Solana
+        if: steps.cache-solana.outputs.cache-hit != 'true'
         run: |
           set -e
-          if ! command -v solana &> /dev/null; then
-            echo "Installing Solana CLI..."
-            curl -sSfL https://release.solana.com/v1.18.15/install | sh
-          fi
+          echo "Downloading Solana v1.18.15 from GitHub releases..."
+          curl -sSfL -o solana.tar.bz2 \
+            "https://github.com/solana-labs/solana/releases/download/v1.18.15/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
+          mkdir -p ~/.local/share/solana/install/active_release
+          tar xjf solana.tar.bz2 -C ~/.local/share/solana/install/active_release --strip-components=1
+          rm solana.tar.bz2
+
+      - name: Add Solana to PATH
+        run: |
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
-          # Verify installation
           export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
           solana --version
 
       - name: Cache Cargo
+        id: cache-cargo
         uses: actions/cache@v4
         with:
           path: |
@@ -49,11 +53,12 @@ jobs:
             ~/.cargo/git
             ~/.cargo/bin
             ~/.avm
-          key: cargo-anchor-0.30.1-${{ runner.os }}
+          key: cargo-anchor-0.30.1-linux-v2
 
       - name: Install Anchor
         run: |
           set -e
+          export PATH="$HOME/.avm/bin:$HOME/.cargo/bin:$PATH"
           if ! command -v anchor &> /dev/null; then
             echo "Installing Anchor via avm..."
             cargo install --git https://github.com/coral-xyz/anchor avm --force --locked
@@ -61,7 +66,6 @@ jobs:
             avm use 0.30.1
           fi
           echo "$HOME/.avm/bin" >> $GITHUB_PATH
-          export PATH="$HOME/.avm/bin:$PATH"
           anchor --version
 
       - name: Generate Keypair
