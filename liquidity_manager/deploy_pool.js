@@ -111,16 +111,8 @@ async function main() {
     console.log(`\nSUCCESS: ${IS_VERIFY ? 'Diagnostic proof' : 'Execution engine'} ready.`);
 }
 
-main().catch(console.error);
-
 main().catch(err => {
     console.error("FATAL SETUP ERROR:");
-    console.error(err);
-    process.exit(1);
-});
-
-main().catch(err => {
-    console.error("FATAL ERROR:");
     console.error(err);
     process.exit(1);
 });

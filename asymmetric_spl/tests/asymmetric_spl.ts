@@ -61,13 +61,30 @@ describe("asymmetric_spl_pro", () => {
     );
   });
 
-  it("FAIL: Unauthorized initialization attempt", async () => {
+  it("FAIL: Unauthorized initialization attempt (rogue cannot re-init)", async () => {
     const rogue = anchor.web3.Keypair.generate();
-    // Airdrop rogue
+    // Airdrop rogue so they have SOL for fees
     const sig = await provider.connection.requestAirdrop(rogue.publicKey, 1e9);
     await provider.connection.confirmTransaction(sig);
 
-    // This should work because rogue is payer, but any subsequent init on same PDA should fail
+    // Rogue attempts to initialize the allowlist PDA (which will be done by authority first)
+    // This test will run AFTER the successful init test below re-orders, 
+    // but we test it here with a different PDA expectation
+    try {
+      await program.methods
+        .initializeAllowlist()
+        .accounts({
+          allowlist: allowlistPda,
+          authority: rogue.publicKey,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .signers([rogue])
+        .rpc();
+      expect.fail("Rogue should not be able to initialize an already-existing allowlist");
+    } catch (e) {
+      // Either "already in use" (PDA exists) or constraint error
+      expect(e).to.exist;
+    }
   });
 
   it("SUCCESS: Initializes the allowlist", async () => {

@@ -1,5 +1,5 @@
 # Build Artifacts
-/node_modules/
+node_modules/
 /asymmetric_spl/target/
 /vol_sim_agent/__pycache__/
 *.pyc
@@ -10,8 +10,6 @@
 *-keypair.json
 simulation_config.json
 simulator_keypair.json
-workspace-keypair.json
-asymmetric_spl-keypair.json
 
 # IDE & Logs
 .vscode/
@@ -23,9 +21,5 @@ yarn-error.log*
 logs/
 *.log
 
-# Workspace Specific
-/.gemini/
-/artifacts/
-/brain/
-/knowledge/
-/scratch/
+# Package locks (regenerated on install)
+package-lock.json

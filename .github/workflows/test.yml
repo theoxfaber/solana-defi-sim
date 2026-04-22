@@ -17,6 +17,11 @@ jobs:
         with:
           node-version: '18'
 
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
       - name: Install Solana
         run: |
           sh -c "$(curl -sSfL https://release.solana.com/v1.18.15/install)"
@@ -26,19 +31,30 @@ jobs:
         run: |
           cargo install --git https://github.com/coral-xyz/anchor --tag v1.0.0 anchor-cli --locked
 
+      - name: Generate Solana Keypair
+        run: |
+          solana-keygen new --no-bip39-passphrase --silent
+          solana config set --url localhost
+
       - name: Start Validator
         run: |
           solana-test-validator --reset --quiet &
           sleep 10
-          solana config set --url localhost
-
-      - name: Install Dependencies
-        run: |
-          npm install
-          cd asymmetric_spl && npm install
 
       - name: Anchor Build & Test
         run: |
           cd asymmetric_spl
+          yarn install
           anchor build
-          anchor test
+          anchor test --skip-local-validator
+
+      - name: Install Liquidity Manager
+        run: |
+          cd liquidity_manager
+          npm install
+
+      - name: Install Vol Sim Agent
+        run: |
+          cd vol_sim_agent
+          pip install -r requirements.txt
+          python -c "from metrics import MetricsTracker; print('✓ Python imports OK')"
