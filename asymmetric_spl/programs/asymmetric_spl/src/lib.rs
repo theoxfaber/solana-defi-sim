@@ -3,15 +3,26 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 declare_id!("76vuoVBk8VtxGHd2BVeTFq3n3aSAFtqzKUncrgrczSNK");
 
+/// Asymmetric SPL — A PDA-based transfer gatekeeper for Solana.
+///
+/// This program implements an on-chain allowlist that gates SPL token transfers.
+/// Only wallets explicitly whitelisted via `set_wallet_status` can execute
+/// transfers through `conditional_transfer`. Authority management uses a
+/// two-step propose/claim rotation pattern for safety.
 #[program]
 pub mod asymmetric_spl {
     use super::*;
 
+    /// Initialize the global allowlist singleton.
+    ///
+    /// This creates the Allowlist PDA with the caller as the initial authority.
+    /// Can only be called once — subsequent calls will fail with "already in use".
     pub fn initialize_allowlist(ctx: Context<InitializeAllowlist>) -> Result<()> {
         let allowlist = &mut ctx.accounts.allowlist;
         allowlist.authority = ctx.accounts.authority.key();
         allowlist.pending_authority = Pubkey::default();
         allowlist.is_enabled = true;
+        allowlist.max_transfer = 0; // 0 = unlimited
         allowlist.bump = ctx.bumps.allowlist;
         
         emit!(AllowlistInitialized {
@@ -20,6 +31,11 @@ pub mod asymmetric_spl {
         Ok(())
     }
 
+    /// Propose a new authority for the allowlist.
+    ///
+    /// Only the current authority can propose. The proposed authority must
+    /// call `claim_authority` to complete the rotation. This two-step pattern
+    /// prevents accidental authority lockout from typos or wrong addresses.
     pub fn propose_authority(ctx: Context<ProposeAuthority>, new_authority: Pubkey) -> Result<()> {
         let allowlist = &mut ctx.accounts.allowlist;
         allowlist.pending_authority = new_authority;
@@ -31,6 +47,10 @@ pub mod asymmetric_spl {
         Ok(())
     }
 
+    /// Claim the authority role after being proposed.
+    ///
+    /// Only the pending authority can call this. Upon success, the caller
+    /// becomes the new authority and pending_authority is reset to default.
     pub fn claim_authority(ctx: Context<ClaimAuthority>) -> Result<()> {
         let allowlist = &mut ctx.accounts.allowlist;
         let old_authority = allowlist.authority;
@@ -45,6 +65,10 @@ pub mod asymmetric_spl {
         Ok(())
     }
 
+    /// Set a wallet's allowlist status (whitelist or revoke).
+    ///
+    /// Creates the WalletEntry PDA if it doesn't exist, otherwise updates it.
+    /// Only the current allowlist authority can call this instruction.
     pub fn set_wallet_status(ctx: Context<SetWalletStatus>, is_allowed: bool) -> Result<()> {
         let wallet_entry = &mut ctx.accounts.wallet_entry;
         wallet_entry.wallet = ctx.accounts.target_wallet.key();
@@ -58,16 +82,63 @@ pub mod asymmetric_spl {
         Ok(())
     }
 
+    /// Toggle the allowlist on or off.
+    ///
+    /// When disabled, all wallets can transfer freely without needing
+    /// a WalletEntry. When enabled, only whitelisted wallets can transfer.
+    pub fn toggle_allowlist(ctx: Context<ToggleAllowlist>, enabled: bool) -> Result<()> {
+        let allowlist = &mut ctx.accounts.allowlist;
+        allowlist.is_enabled = enabled;
+
+        emit!(AllowlistToggled {
+            enabled,
+            authority: ctx.accounts.authority.key(),
+        });
+        Ok(())
+    }
+
+    /// Set the maximum transfer amount per transaction.
+    ///
+    /// A value of 0 means unlimited. Any `conditional_transfer` exceeding
+    /// this limit will be rejected. Only the authority can set this.
+    pub fn set_max_transfer(ctx: Context<SetMaxTransfer>, max_amount: u64) -> Result<()> {
+        let allowlist = &mut ctx.accounts.allowlist;
+        allowlist.max_transfer = max_amount;
+
+        emit!(MaxTransferUpdated {
+            max_amount,
+            authority: ctx.accounts.authority.key(),
+        });
+        Ok(())
+    }
+
+    /// Execute a gated SPL token transfer.
+    ///
+    /// The transfer is only allowed if:
+    /// 1. The allowlist is disabled (bypass mode), OR
+    /// 2. The sender's WalletEntry has `is_allowed == true`
+    ///
+    /// Additional checks:
+    /// - Amount must be greater than zero
+    /// - Amount must not exceed `max_transfer` (if set)
+    ///
+    /// Emits a `TransferChecked` event regardless of success/failure.
     pub fn conditional_transfer(ctx: Context<ConditionalTransfer>, amount: u64) -> Result<()> {
+        // Validate amount
+        require!(amount > 0, ErrorCode::ZeroAmountTransfer);
+
         let allowlist = &ctx.accounts.allowlist;
         let wallet_entry = &ctx.accounts.wallet_entry;
 
+        // Check max transfer limit
+        if allowlist.max_transfer > 0 {
+            require!(amount <= allowlist.max_transfer, ErrorCode::ExceedsMaxTransfer);
+        }
+
         // Liquidity Gatekeeper Logic
-        // 1. If allowlist is disabled, allow all.
-        // 2. If enabled, the 'from' wallet must have a wallet_entry with is_allowed = true.
         let is_allowed = !allowlist.is_enabled || wallet_entry.is_allowed;
 
-        // CRITICAL: Emit event BEFORE the require! check as requested.
+        // Emit event before the require check for observability
         emit!(TransferChecked {
             from: ctx.accounts.from.key(),
             to: ctx.accounts.to_token_account.key(),
@@ -77,7 +148,7 @@ pub mod asymmetric_spl {
 
         require!(is_allowed, ErrorCode::TransferNotAllowed);
 
-        // Perform CPI transfer using Anchor 1.0 / Modern syntax
+        // Perform CPI transfer
         let cpi_accounts = Transfer {
             from: ctx.accounts.from_token_account.to_account_info(),
             to: ctx.accounts.to_token_account.to_account_info(),
@@ -90,14 +161,30 @@ pub mod asymmetric_spl {
 
         Ok(())
     }
+
+    /// Close a wallet entry and reclaim its rent.
+    ///
+    /// Sends the lamports back to the authority. Useful for cleaning up
+    /// entries for wallets that are no longer participating in the simulation.
+    pub fn close_wallet_entry(ctx: Context<CloseWalletEntry>) -> Result<()> {
+        emit!(WalletStatusUpdated {
+            wallet: ctx.accounts.wallet_entry.wallet,
+            is_allowed: false,
+        });
+        Ok(())
+    }
 }
+
+// ============================================================================
+// Account Structs
+// ============================================================================
 
 #[derive(Accounts)]
 pub struct InitializeAllowlist<'info> {
     #[account(
         init,
         payer = authority,
-        space = 8 + 32 + 32 + 1 + 1, // Added 32 for pending_authority
+        space = 8 + Allowlist::INIT_SPACE,
         seeds = [b"allowlist"],
         bump
     )]
@@ -136,12 +223,12 @@ pub struct SetWalletStatus<'info> {
     #[account(
         init_if_needed,
         payer = authority,
-        space = 8 + 32 + 1 + 1,
+        space = 8 + WalletEntry::INIT_SPACE,
         seeds = [b"wallet", allowlist.key().as_ref(), target_wallet.key().as_ref()],
         bump
     )]
     pub wallet_entry: Account<'info, WalletEntry>,
-    /// CHECK: Target wallet being allowed/blocked
+    /// CHECK: Target wallet being allowed/blocked — no data read
     pub target_wallet: UncheckedAccount<'info>,
     #[account(
         mut,
@@ -153,6 +240,30 @@ pub struct SetWalletStatus<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ToggleAllowlist<'info> {
+    #[account(
+        mut,
+        has_one = authority @ ErrorCode::InvalidAuthority,
+        seeds = [b"allowlist"],
+        bump = allowlist.bump,
+    )]
+    pub allowlist: Account<'info, Allowlist>,
+    pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct SetMaxTransfer<'info> {
+    #[account(
+        mut,
+        has_one = authority @ ErrorCode::InvalidAuthority,
+        seeds = [b"allowlist"],
+        bump = allowlist.bump,
+    )]
+    pub allowlist: Account<'info, Allowlist>,
+    pub authority: Signer<'info>,
 }
 
 #[derive(Accounts)]
@@ -181,20 +292,58 @@ pub struct ConditionalTransfer<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+#[derive(Accounts)]
+pub struct CloseWalletEntry<'info> {
+    #[account(
+        mut,
+        close = authority,
+        seeds = [b"wallet", allowlist.key().as_ref(), wallet_entry.wallet.as_ref()],
+        bump = wallet_entry.bump,
+    )]
+    pub wallet_entry: Account<'info, WalletEntry>,
+    #[account(
+        has_one = authority @ ErrorCode::InvalidAuthority,
+        seeds = [b"allowlist"],
+        bump = allowlist.bump,
+    )]
+    pub allowlist: Account<'info, Allowlist>,
+    #[account(mut)]
+    pub authority: Signer<'info>,
+}
+
+// ============================================================================
+// State
+// ============================================================================
+
 #[account]
+#[derive(InitSpace)]
 pub struct Allowlist {
+    /// The current authority who can manage the allowlist
     pub authority: Pubkey,
+    /// Pending authority for two-step rotation
     pub pending_authority: Pubkey,
+    /// Whether the allowlist is actively enforced
     pub is_enabled: bool,
+    /// Maximum amount per transfer (0 = unlimited)
+    pub max_transfer: u64,
+    /// PDA bump seed
     pub bump: u8,
 }
 
 #[account]
+#[derive(InitSpace)]
 pub struct WalletEntry {
+    /// The wallet address this entry applies to
     pub wallet: Pubkey,
+    /// Whether this wallet is allowed to transfer
     pub is_allowed: bool,
+    /// PDA bump seed
     pub bump: u8,
 }
+
+// ============================================================================
+// Events
+// ============================================================================
 
 #[event]
 pub struct AllowlistInitialized {
@@ -227,6 +376,22 @@ pub struct AuthorityClaimed {
     pub new: Pubkey,
 }
 
+#[event]
+pub struct AllowlistToggled {
+    pub enabled: bool,
+    pub authority: Pubkey,
+}
+
+#[event]
+pub struct MaxTransferUpdated {
+    pub max_amount: u64,
+    pub authority: Pubkey,
+}
+
+// ============================================================================
+// Errors
+// ============================================================================
+
 #[error_code]
 pub enum ErrorCode {
     #[msg("The provided authority does not match the allowlist authority.")]
@@ -237,4 +402,8 @@ pub enum ErrorCode {
     InvalidTokenAccountOwner,
     #[msg("Only the pending authority can claim this role.")]
     NotPendingAuthority,
+    #[msg("Transfer amount must be greater than zero.")]
+    ZeroAmountTransfer,
+    #[msg("Transfer amount exceeds the maximum allowed per transaction.")]
+    ExceedsMaxTransfer,
 }

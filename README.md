@@ -38,7 +38,7 @@
 
 ### 🔐 PDA Gatekeeper
 
-On-chain Anchor program with<br/>PDA-based transfer allowlist &<br/>two-step authority rotation
+Anchor program with PDA transfer<br/>allowlist, authority rotation,<br/>per-tx limits & rent reclaim
 
 </td>
 <td width="33%" align="center">
@@ -59,9 +59,9 @@ File-watcher config bus for<br/>mid-simulation RPC rotation<br/>& parameter tuni
 <tr>
 <td width="33%" align="center">
 
-### ⚡ Async Execution
+### ⚡ Anchor CPI Trades
 
-`VersionedTransaction` signing<br/>via `solders` with concurrent<br/>trade submission
+All transfers route through<br/>`conditional_transfer` with<br/>on-chain gating validation
 
 </td>
 <td width="33%" align="center">
@@ -73,9 +73,9 @@ PDA boundary tests covering<br/>seed spoofing, program ID<br/>injection, & type 
 </td>
 <td width="33%" align="center">
 
-### 🔄 Wallet Injector
+### 🔄 CLI & Export
 
-Standalone CLI for on-chain<br/>onboarding: Airdrop → ATA<br/>Init → Whitelist
+argparse CLI with `--export`<br/>JSON results, `--verify` dry-run,<br/>& SIGINT graceful shutdown
 
 </td>
 </tr>
@@ -269,7 +269,10 @@ python3 main.py             # Starts live dashboard + market cycle
 | `set_wallet_status` | `WalletEntry(init_if_needed)`, `Wallet`, `Allowlist`, `Authority(signer)` | Grant or revoke transfer permission |
 | `propose_authority` | `Allowlist(mut)`, `Authority(signer)` | Set a pending authority for rotation |
 | `claim_authority` | `Allowlist(mut)`, `PendingAuthority(signer)` | Accept the authority role |
-| `conditional_transfer` | `From(signer)`, `FromATA(mut)`, `ToATA(mut)`, `Allowlist`, `WalletEntry` | Execute a gated SPL transfer |
+| `toggle_allowlist` | `Allowlist(mut)`, `Authority(signer)` | Enable/disable allowlist enforcement |
+| `set_max_transfer` | `Allowlist(mut)`, `Authority(signer)` | Set per-transaction transfer cap (0 = unlimited) |
+| `conditional_transfer` | `From(signer)`, `FromATA(mut)`, `ToATA(mut)`, `Allowlist`, `WalletEntry` | Execute a gated SPL transfer via CPI |
+| `close_wallet_entry` | `WalletEntry(close)`, `Allowlist`, `Authority(signer)` | Reclaim rent from a wallet entry |
 
 ### PDA Derivation
 

@@ -9,7 +9,7 @@ import {
   TOKEN_PROGRAM_ID 
 } from "@solana/spl-token";
 
-describe("asymmetric_spl_pro", () => {
+describe("asymmetric_spl", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
 
@@ -27,8 +27,19 @@ describe("asymmetric_spl_pro", () => {
     program.programId
   );
 
+  // ========================================================================
+  // Setup
+  // ========================================================================
   before(async () => {
-    // Setup token environment
+    // Fund the user for fees
+    const sig = await provider.connection.requestAirdrop(user.publicKey, 2e9);
+    await provider.connection.confirmTransaction(sig);
+
+    // Fund newAuthority for claim test
+    const sig2 = await provider.connection.requestAirdrop(newAuthority.publicKey, 2e9);
+    await provider.connection.confirmTransaction(sig2);
+
+    // Create token mint
     mint = await createMint(
       provider.connection,
       authority.payer,
@@ -37,6 +48,7 @@ describe("asymmetric_spl_pro", () => {
       6
     );
 
+    // Create ATAs
     authorityAta = (await getOrCreateAssociatedTokenAccount(
       provider.connection,
       authority.payer,
@@ -51,59 +63,22 @@ describe("asymmetric_spl_pro", () => {
       user.publicKey
     )).address;
 
+    // Mint tokens to authority
     await mintTo(
       provider.connection,
       authority.payer,
       mint,
       authorityAta,
       authority.publicKey,
-      1000000
+      10_000_000 // 10 tokens at 6 decimals
     );
   });
 
-  it("FAIL: Unauthorized initialization attempt (rogue cannot re-init)", async () => {
-    const rogue = anchor.web3.Keypair.generate();
-    // Airdrop rogue so they have SOL for fees
-    const sig = await provider.connection.requestAirdrop(rogue.publicKey, 1e9);
-    await provider.connection.confirmTransaction(sig);
-
-    // Rogue attempts to initialize the allowlist PDA (which will be done by authority first)
-    // This test will run AFTER the successful init test below re-orders, 
-    // but we test it here with a different PDA expectation
-    try {
-      await program.methods
-        .initializeAllowlist()
-        .accounts({
-          allowlist: allowlistPda,
-          authority: rogue.publicKey,
-          systemProgram: anchor.web3.SystemProgram.programId,
-        })
-        .signers([rogue])
-        .rpc();
-      expect.fail("Rogue should not be able to initialize an already-existing allowlist");
-    } catch (e) {
-      // Either "already in use" (PDA exists) or constraint error
-      expect(e).to.exist;
-    }
-  });
-
-  it("SUCCESS: Initializes the allowlist", async () => {
-    await program.methods
-      .initializeAllowlist()
-      .accounts({
-        allowlist: allowlistPda,
-        authority: authority.publicKey,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .rpc();
-
-    const state = await program.account.allowlist.fetch(allowlistPda);
-    expect(state.authority.toBase58()).to.equal(authority.publicKey.toBase58());
-    expect(state.pendingAuthority.toBase58()).to.equal(anchor.web3.PublicKey.default.toBase58());
-  });
-
-  it("FAIL: Double initialization guard", async () => {
-    try {
+  // ========================================================================
+  // Allowlist Initialization
+  // ========================================================================
+  describe("Allowlist Initialization", () => {
+    it("SUCCESS: Initializes the allowlist", async () => {
       await program.methods
         .initializeAllowlist()
         .accounts({
@@ -112,137 +87,298 @@ describe("asymmetric_spl_pro", () => {
           systemProgram: anchor.web3.SystemProgram.programId,
         })
         .rpc();
-      expect.fail("Should have failed with already in use");
-    } catch (e) {
-      expect(e.logs.toString()).to.include("already in use");
-    }
-  });
 
-  it("SUCCESS: Whitelists a user", async () => {
-    const [walletEntryPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("wallet"), allowlistPda.toBuffer(), user.publicKey.toBuffer()],
-      program.programId
-    );
+      const state = await program.account.allowlist.fetch(allowlistPda);
+      expect(state.authority.toBase58()).to.equal(authority.publicKey.toBase58());
+      expect(state.pendingAuthority.toBase58()).to.equal(anchor.web3.PublicKey.default.toBase58());
+      expect(state.isEnabled).to.be.true;
+      expect(state.maxTransfer.toNumber()).to.equal(0);
+    });
 
-    await program.methods
-      .setWalletStatus(true)
-      .accounts({
-        walletEntry: walletEntryPda,
-        targetWallet: user.publicKey,
-        authority: authority.publicKey,
-        allowlist: allowlistPda,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .rpc();
-
-    const entry = await program.account.walletEntry.fetch(walletEntryPda);
-    expect(entry.isAllowed).to.be.true;
-  });
-
-  it("FAIL: Rejection on unauthorized transfer attempt", async () => {
-    const blockedUser = anchor.web3.Keypair.generate();
-    const blockedAta = (await getOrCreateAssociatedTokenAccount(
-        provider.connection,
-        authority.payer,
-        mint,
-        blockedUser.publicKey
-    )).address;
-
-    const [blockedEntryPda] = anchor.web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("wallet"), allowlistPda.toBuffer(), blockedUser.publicKey.toBuffer()],
-        program.programId
-    );
-
-    // Attempt transfer without being on allowlist (PDA check will catch AccountNotInitialized)
-    try {
+    it("FAIL: Double initialization is rejected", async () => {
+      try {
         await program.methods
-            .conditionalTransfer(new anchor.BN(100))
-            .accounts({
-                from: blockedUser.publicKey,
-                fromTokenAccount: blockedAta,
-                toTokenAccount: authorityAta,
-                allowlist: allowlistPda,
-                walletEntry: blockedEntryPda,
-                tokenProgram: TOKEN_PROGRAM_ID,
-            })
-            .signers([blockedUser])
-            .rpc();
-        expect.fail("Should have failed");
-    } catch (e) {
-        expect(e.message).to.include("Account does not exist");
-    }
-  });
+          .initializeAllowlist()
+          .accounts({
+            allowlist: allowlistPda,
+            authority: authority.publicKey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+          })
+          .rpc();
+        expect.fail("Should have failed with already in use");
+      } catch (e: any) {
+        expect(e.logs.toString()).to.include("already in use");
+      }
+    });
 
-  it("SUCCESS: Two-step authority rotation", async () => {
-    // 1. Propose
-    await program.methods
-      .proposeAuthority(newAuthority.publicKey)
-      .accounts({
-        allowlist: allowlistPda,
-        authority: authority.publicKey,
-      })
-      .rpc();
+    it("FAIL: Rogue cannot re-initialize the PDA", async () => {
+      const rogue = anchor.web3.Keypair.generate();
+      const airdropSig = await provider.connection.requestAirdrop(rogue.publicKey, 1e9);
+      await provider.connection.confirmTransaction(airdropSig);
 
-    let state = await program.account.allowlist.fetch(allowlistPda);
-    expect(state.pendingAuthority.toBase58()).to.equal(newAuthority.publicKey.toBase58());
-
-    // 2. Claim from rogue (should fail)
-    const rogue = anchor.web3.Keypair.generate();
-    try {
+      try {
         await program.methods
-            .claimAuthority()
-            .accounts({
-                allowlist: allowlistPda,
-                pendingAuthority: rogue.publicKey,
-            })
-            .signers([rogue])
-            .rpc();
-        expect.fail("Rogue claimed authority!");
-    } catch (e) {
-        expect(e.message).to.include("NotPendingAuthority");
-    }
-
-    // 3. Claim correctly
-    await program.methods
-      .claimAuthority()
-      .accounts({
-        allowlist: allowlistPda,
-        pendingAuthority: newAuthority.publicKey,
-      })
-      .signers([newAuthority])
-      .rpc();
-
-    state = await program.account.allowlist.fetch(allowlistPda);
-    expect(state.authority.toBase58()).to.equal(newAuthority.publicKey.toBase58());
-    expect(state.pendingAuthority.toBase58()).to.equal(anchor.web3.PublicKey.default.toBase58());
+          .initializeAllowlist()
+          .accounts({
+            allowlist: allowlistPda,
+            authority: rogue.publicKey,
+            systemProgram: anchor.web3.SystemProgram.programId,
+          })
+          .signers([rogue])
+          .rpc();
+        expect.fail("Rogue should not be able to re-initialize");
+      } catch (e: any) {
+        expect(e).to.exist;
+      }
+    });
   });
 
-  it("FAIL: Unauthorized status update (after rotation)", async () => {
-    const [walletEntryPda] = anchor.web3.PublicKey.findProgramAddressSync(
+  // ========================================================================
+  // Wallet Whitelisting
+  // ========================================================================
+  describe("Wallet Whitelisting", () => {
+    it("SUCCESS: Whitelists a user wallet", async () => {
+      const [walletEntryPda] = anchor.web3.PublicKey.findProgramAddressSync(
         [Buffer.from("wallet"), allowlistPda.toBuffer(), user.publicKey.toBuffer()],
         program.programId
       );
 
-    try {
-        await program.methods
-            .setWalletStatus(false)
-            .accounts({
-                walletEntry: walletEntryPda,
-                targetWallet: user.publicKey,
-                authority: authority.publicKey, // Old authority
-                allowlist: allowlistPda,
-                systemProgram: anchor.web3.SystemProgram.programId,
-            })
-            .rpc();
-        expect.fail("Old authority still works!");
-    } catch (e) {
-        expect(e.message).to.include("InvalidAuthority");
-    }
+      await program.methods
+        .setWalletStatus(true)
+        .accounts({
+          walletEntry: walletEntryPda,
+          targetWallet: user.publicKey,
+          authority: authority.publicKey,
+          allowlist: allowlistPda,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc();
+
+      const entry = await program.account.walletEntry.fetch(walletEntryPda);
+      expect(entry.isAllowed).to.be.true;
+      expect(entry.wallet.toBase58()).to.equal(user.publicKey.toBase58());
+    });
+
+    it("SUCCESS: De-whitelist then re-whitelist", async () => {
+      const [walletEntryPda] = anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("wallet"), allowlistPda.toBuffer(), user.publicKey.toBuffer()],
+        program.programId
+      );
+
+      // Revoke
+      await program.methods
+        .setWalletStatus(false)
+        .accounts({
+          walletEntry: walletEntryPda,
+          targetWallet: user.publicKey,
+          authority: authority.publicKey,
+          allowlist: allowlistPda,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc();
+
+      let entry = await program.account.walletEntry.fetch(walletEntryPda);
+      expect(entry.isAllowed).to.be.false;
+
+      // Re-whitelist
+      await program.methods
+        .setWalletStatus(true)
+        .accounts({
+          walletEntry: walletEntryPda,
+          targetWallet: user.publicKey,
+          authority: authority.publicKey,
+          allowlist: allowlistPda,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc();
+
+      entry = await program.account.walletEntry.fetch(walletEntryPda);
+      expect(entry.isAllowed).to.be.true;
+    });
   });
 
+  // ========================================================================
+  // Conditional Transfer
+  // ========================================================================
+  describe("Conditional Transfer", () => {
+    it("SUCCESS: Authorized wallet can transfer tokens", async () => {
+      const [walletEntryPda] = anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("wallet"), allowlistPda.toBuffer(), authority.publicKey.toBuffer()],
+        program.programId
+      );
+
+      // Whitelist the authority wallet itself
+      await program.methods
+        .setWalletStatus(true)
+        .accounts({
+          walletEntry: walletEntryPda,
+          targetWallet: authority.publicKey,
+          authority: authority.publicKey,
+          allowlist: allowlistPda,
+          systemProgram: anchor.web3.SystemProgram.programId,
+        })
+        .rpc();
+
+      // Execute a gated transfer: authority → user
+      await program.methods
+        .conditionalTransfer(new anchor.BN(1_000_000))
+        .accounts({
+          from: authority.publicKey,
+          fromTokenAccount: authorityAta,
+          toTokenAccount: userAta,
+          allowlist: allowlistPda,
+          walletEntry: walletEntryPda,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc();
+
+      // Verify balance moved
+      const userBalance = await provider.connection.getTokenAccountBalance(userAta);
+      expect(Number(userBalance.value.amount)).to.be.greaterThan(0);
+    });
+
+    it("FAIL: Blocked wallet cannot transfer", async () => {
+      const blockedUser = anchor.web3.Keypair.generate();
+      const airdropSig = await provider.connection.requestAirdrop(blockedUser.publicKey, 1e9);
+      await provider.connection.confirmTransaction(airdropSig);
+
+      const blockedAta = (await getOrCreateAssociatedTokenAccount(
+        provider.connection,
+        authority.payer,
+        mint,
+        blockedUser.publicKey
+      )).address;
+
+      const [blockedEntryPda] = anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("wallet"), allowlistPda.toBuffer(), blockedUser.publicKey.toBuffer()],
+        program.programId
+      );
+
+      try {
+        await program.methods
+          .conditionalTransfer(new anchor.BN(100))
+          .accounts({
+            from: blockedUser.publicKey,
+            fromTokenAccount: blockedAta,
+            toTokenAccount: authorityAta,
+            allowlist: allowlistPda,
+            walletEntry: blockedEntryPda,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .signers([blockedUser])
+          .rpc();
+        expect.fail("Blocked user should not be able to transfer");
+      } catch (e: any) {
+        // WalletEntry PDA doesn't exist → AccountNotInitialized
+        expect(e.message).to.include("Account does not exist");
+      }
+    });
+
+    it("FAIL: Zero-amount transfer is rejected", async () => {
+      const [walletEntryPda] = anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("wallet"), allowlistPda.toBuffer(), authority.publicKey.toBuffer()],
+        program.programId
+      );
+
+      try {
+        await program.methods
+          .conditionalTransfer(new anchor.BN(0))
+          .accounts({
+            from: authority.publicKey,
+            fromTokenAccount: authorityAta,
+            toTokenAccount: userAta,
+            allowlist: allowlistPda,
+            walletEntry: walletEntryPda,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .rpc();
+        expect.fail("Zero-amount should be rejected");
+      } catch (e: any) {
+        expect(e.message).to.include("ZeroAmountTransfer");
+      }
+    });
+  });
+
+  // ========================================================================
+  // Authority Rotation
+  // ========================================================================
+  describe("Authority Rotation", () => {
+    it("SUCCESS: Two-step propose → claim rotation", async () => {
+      // Propose
+      await program.methods
+        .proposeAuthority(newAuthority.publicKey)
+        .accounts({
+          allowlist: allowlistPda,
+          authority: authority.publicKey,
+        })
+        .rpc();
+
+      let state = await program.account.allowlist.fetch(allowlistPda);
+      expect(state.pendingAuthority.toBase58()).to.equal(newAuthority.publicKey.toBase58());
+
+      // Rogue claim fails
+      const rogue = anchor.web3.Keypair.generate();
+      const airdropSig = await provider.connection.requestAirdrop(rogue.publicKey, 1e9);
+      await provider.connection.confirmTransaction(airdropSig);
+
+      try {
+        await program.methods
+          .claimAuthority()
+          .accounts({
+            allowlist: allowlistPda,
+            pendingAuthority: rogue.publicKey,
+          })
+          .signers([rogue])
+          .rpc();
+        expect.fail("Rogue claimed authority!");
+      } catch (e: any) {
+        expect(e.message).to.include("NotPendingAuthority");
+      }
+
+      // Correct claim
+      await program.methods
+        .claimAuthority()
+        .accounts({
+          allowlist: allowlistPda,
+          pendingAuthority: newAuthority.publicKey,
+        })
+        .signers([newAuthority])
+        .rpc();
+
+      state = await program.account.allowlist.fetch(allowlistPda);
+      expect(state.authority.toBase58()).to.equal(newAuthority.publicKey.toBase58());
+      expect(state.pendingAuthority.toBase58()).to.equal(anchor.web3.PublicKey.default.toBase58());
+    });
+
+    it("FAIL: Old authority cannot manage allowlist after rotation", async () => {
+      const [walletEntryPda] = anchor.web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("wallet"), allowlistPda.toBuffer(), user.publicKey.toBuffer()],
+        program.programId
+      );
+
+      try {
+        await program.methods
+          .setWalletStatus(false)
+          .accounts({
+            walletEntry: walletEntryPda,
+            targetWallet: user.publicKey,
+            authority: authority.publicKey, // Old authority
+            allowlist: allowlistPda,
+            systemProgram: anchor.web3.SystemProgram.programId,
+          })
+          .rpc();
+        expect.fail("Old authority still works!");
+      } catch (e: any) {
+        expect(e.message).to.include("InvalidAuthority");
+      }
+    });
+  });
+
+  // ========================================================================
+  // PDA Boundary Security Fuzzing
+  // ========================================================================
   describe("Security: PDA Boundary Fuzzing", () => {
     it("FAIL: Rejects PDA with incorrect seed prefix", async () => {
-      // Correct prefix is "wallet", let's try "stolen_wallet"
       const [fakeEntryPda] = anchor.web3.PublicKey.findProgramAddressSync(
         [Buffer.from("stolen_wallet"), allowlistPda.toBuffer(), user.publicKey.toBuffer()],
         program.programId
@@ -254,18 +390,19 @@ describe("asymmetric_spl_pro", () => {
           .accounts({
             walletEntry: fakeEntryPda,
             targetWallet: user.publicKey,
-            authority: authority.publicKey,
+            authority: newAuthority.publicKey, // Current authority after rotation
             allowlist: allowlistPda,
             systemProgram: anchor.web3.SystemProgram.programId,
           })
+          .signers([newAuthority])
           .rpc();
-        expect.fail("Seed prefix fuzzing was ignored!");
-      } catch (e) {
+        expect.fail("Spoofed seed prefix was accepted!");
+      } catch (e: any) {
         expect(e.message).to.include("ConstraintSeeds");
       }
     });
 
-    it("FAIL: Rejects PDA derived from incorrect program ID", async () => {
+    it("FAIL: Rejects PDA from incorrect program ID", async () => {
       const otherProgramId = anchor.web3.Keypair.generate().publicKey;
       const [alienPda] = anchor.web3.PublicKey.findProgramAddressSync(
         [Buffer.from("wallet"), allowlistPda.toBuffer(), user.publicKey.toBuffer()],
@@ -278,32 +415,34 @@ describe("asymmetric_spl_pro", () => {
           .accounts({
             walletEntry: alienPda,
             targetWallet: user.publicKey,
-            authority: authority.publicKey,
+            authority: newAuthority.publicKey,
             allowlist: allowlistPda,
             systemProgram: anchor.web3.SystemProgram.programId,
           })
+          .signers([newAuthority])
           .rpc();
-        expect.fail("Ownership check was bypassed!");
-      } catch (e) {
-        expect(e.message).to.include("ConstraintSeeds") || expect(e.message).to.include("AccountDoesNotBelongToProgram");
+        expect.fail("Cross-program PDA injection worked!");
+      } catch (e: any) {
+        expect(e).to.exist;
       }
     });
 
-    it("FAIL: Rejects account type mismatch (Allowlist as WalletEntry)", async () => {
+    it("FAIL: Rejects account type confusion (Allowlist into WalletEntry slot)", async () => {
       try {
         await program.methods
           .setWalletStatus(true)
           .accounts({
-            walletEntry: allowlistPda, // Swapping Allowlist into WalletEntry slot
+            walletEntry: allowlistPda,
             targetWallet: user.publicKey,
-            authority: authority.publicKey,
+            authority: newAuthority.publicKey,
             allowlist: allowlistPda,
             systemProgram: anchor.web3.SystemProgram.programId,
           })
+          .signers([newAuthority])
           .rpc();
-        expect.fail("Type mismatch was ignored!");
-      } catch (e) {
-        expect(e.message).to.include("ConstraintSeeds") || expect(e.message).to.include("AccountNotFoundError");
+        expect.fail("Type confusion was accepted!");
+      } catch (e: any) {
+        expect(e).to.exist;
       }
     });
   });

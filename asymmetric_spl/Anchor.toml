@@ -7,13 +7,10 @@ skip-lint = false
 
 [programs.localnet]
 asymmetric_spl = "76vuoVBk8VtxGHd2BVeTFq3n3aSAFtqzKUncrgrczSNK"
-workspace = "BhHNeG8Ck5bxm9sMYdgXpw769oPsQLyQY21rWewvNn3r"
 
 [provider]
 cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "cargo test"
-
-[hooks]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

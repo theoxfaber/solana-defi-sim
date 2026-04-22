@@ -7,54 +7,122 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
+  # -----------------------------------------------------------------------
+  # Anchor Program Build & Test
+  # -----------------------------------------------------------------------
+  anchor-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
+          cache: 'yarn'
+          cache-dependency-path: asymmetric_spl/yarn.lock
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - name: Cache Solana
+        uses: actions/cache@v4
         with:
-          python-version: '3.11'
+          path: ~/.local/share/solana
+          key: solana-1.18.15-${{ runner.os }}
 
       - name: Install Solana
         run: |
-          sh -c "$(curl -sSfL https://release.solana.com/v1.18.15/install)"
+          if ! command -v solana &> /dev/null; then
+            sh -c "$(curl -sSfL https://release.solana.com/v1.18.15/install)"
+          fi
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Cache Anchor
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/anchor
+          key: anchor-1.0.0-${{ runner.os }}
 
       - name: Install Anchor
         run: |
-          cargo install --git https://github.com/coral-xyz/anchor --tag v1.0.0 anchor-cli --locked
+          if ! command -v anchor &> /dev/null; then
+            cargo install --git https://github.com/coral-xyz/anchor --tag v1.0.0 anchor-cli --locked
+          fi
 
-      - name: Generate Solana Keypair
+      - name: Generate Keypair
         run: |
           solana-keygen new --no-bip39-passphrase --silent
           solana config set --url localhost
 
-      - name: Start Validator
-        run: |
-          solana-test-validator --reset --quiet &
-          sleep 10
-
-      - name: Anchor Build & Test
+      - name: Build & Test
         run: |
           cd asymmetric_spl
           yarn install
           anchor build
-          anchor test --skip-local-validator
+          anchor test
 
-      - name: Install Liquidity Manager
-        run: |
-          cd liquidity_manager
-          npm install
+  # -----------------------------------------------------------------------
+  # Python Agent Tests
+  # -----------------------------------------------------------------------
+  python-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Install Vol Sim Agent
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: vol_sim_agent/requirements.txt
+
+      - name: Install Dependencies
         run: |
           cd vol_sim_agent
           pip install -r requirements.txt
-          python -c "from metrics import MetricsTracker; print('✓ Python imports OK')"
+
+      - name: Run Unit Tests
+        run: |
+          cd vol_sim_agent
+          pytest test_agent.py -v --tb=short
+
+      - name: Verify Imports
+        run: |
+          cd vol_sim_agent
+          python -c "
+          from metrics import MetricsTracker
+          from main import SimulationConfig, get_anchor_discriminator, parse_args
+          print('✓ All Python imports verified')
+          "
+
+  # -----------------------------------------------------------------------
+  # Node.js Orchestrator Validation
+  # -----------------------------------------------------------------------
+  orchestrator-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install & Validate
+        run: |
+          cd liquidity_manager
+          npm install
+          node -e "
+          const { validateConfig } = require('./config_schema');
+          const testConfig = {
+            TOKEN_MINT: 'A'.repeat(44),
+            POOL_WALLET_PUBLIC_KEY: 'A'.repeat(44),
+            POOL_WALLET_PRIVATE_KEY: 'A'.repeat(88),
+            AUTHORITY_PUBLIC_KEY: 'A'.repeat(44),
+            ALLOWLIST_PDA: 'A'.repeat(44),
+            CHILD_WALLETS: [{ pubkey: 'A'.repeat(44), private_key: 'A'.repeat(88) }],
+            DECIMALS: 6,
+            RPC_URL: 'http://127.0.0.1:8899',
+          };
+          const errors = validateConfig(testConfig);
+          if (errors.length > 0) { console.error(errors); process.exit(1); }
+          console.log('✓ Config schema validation works');
+          "
