@@ -1,24 +1,41 @@
-# Security Policy
+<div align="center">
+
+# 🛡️ Security Policy
+
+</div>
+
+<br />
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| v1.0.x  | :white_check_mark: |
-| < v1.0  | :x:                |
+| Version | Status |
+|:---|:---|
+| v1.0.x | ✅ Supported |
+| < v1.0 | ❌ End of life |
 
-## Reporting a Vulnerability
+<br />
 
-If you discover a potential vulnerability, please do NOT create a public issue. Instead:
+## 🔒 Reporting a Vulnerability
 
-1.  **Direct Disclosure**: Contact the project maintainer directly via GitHub.
-2.  **Incident Lifecycle**: We will acknowledge your report within 48 hours and provide a timeline for a resolution.
-3.  **Coordinated Release**: We will issue a security advisory along with a patch.
+> **Do NOT open a public issue for security vulnerabilities.**
 
-## Private Key Safety
+| Step | Action |
+|:---|:---|
+| **1. Disclose** | Contact the maintainer directly via GitHub |
+| **2. Response** | We will acknowledge within 48 hours |
+| **3. Resolution** | A patch and security advisory will be issued |
 
-This project uses a **Local-Only Identity Model**:
-- **Git-Ignored Keys**: The `.gitignore` blocks all `*-keypair.json`, `.env`, and `simulation_config.json` files from being committed.
-- **Fresh Key Generation**: Run `node create_env.js` to generate a new authority keypair. No private keys are hardcoded in source.
-- **Ephemeral Keys**: Use the generated keypairs only for Localnet stress testing. Never fund them with mainnet assets.
-- **Authority Rotation**: The on-chain Propose -> Claim pattern mitigates unauthorized access during administrative transfers.
+<br />
+
+## 🔑 Private Key Safety Model
+
+| Control | Details |
+|:---|:---|
+| **Git-Ignored Keys** | `.gitignore` blocks `*-keypair.json`, `.env`, and `simulation_config.json` |
+| **Fresh Generation** | `create_env.js` generates new keypairs at runtime — zero hardcoded secrets |
+| **Ephemeral Scope** | Generated keys are for Localnet stress testing only |
+| **Authority Rotation** | On-chain `propose` → `claim` pattern prevents unauthorized admin transfers |
+
+<br />
+
+> ⚠️ **Never fund simulation keypairs with mainnet SOL or tokens.**
