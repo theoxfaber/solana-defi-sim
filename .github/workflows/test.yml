@@ -21,24 +21,48 @@ jobs:
           node-version: '18'
 
       - name: Cache Solana
+        id: cache-solana
         uses: actions/cache@v4
         with:
-          path: ~/.local/share/solana
-          key: solana-1.18.15-${{ runner.os }}
+          path: |
+            ~/.local/share/solana/install
+            ~/.cache/solana
+          key: solana-1.18.15-${{ runner.os }}-v2
 
       - name: Install Solana
         run: |
+          set -e
           if ! command -v solana &> /dev/null; then
-            sh -c "$(curl -sSfL https://release.solana.com/v1.18.15/install)"
+            echo "Installing Solana CLI..."
+            curl -sSfL https://release.solana.com/v1.18.15/install | sh
           fi
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+          # Verify installation
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          solana --version
 
-      - name: Install Anchor (via avm)
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            ~/.avm
+          key: cargo-anchor-0.30.1-${{ runner.os }}
+
+      - name: Install Anchor
         run: |
-          cargo install --git https://github.com/coral-xyz/anchor avm --force --locked
-          avm install 0.30.1
-          avm use 0.30.1
+          set -e
+          if ! command -v anchor &> /dev/null; then
+            echo "Installing Anchor via avm..."
+            cargo install --git https://github.com/coral-xyz/anchor avm --force --locked
+            avm install 0.30.1
+            avm use 0.30.1
+          fi
           echo "$HOME/.avm/bin" >> $GITHUB_PATH
+          export PATH="$HOME/.avm/bin:$PATH"
+          anchor --version
 
       - name: Generate Keypair
         run: |
@@ -48,14 +72,14 @@ jobs:
       - name: Install Test Dependencies
         run: |
           cd asymmetric_spl
-          yarn install --frozen-lockfile || yarn install
+          yarn install --frozen-lockfile 2>/dev/null || yarn install
 
-      - name: Build
+      - name: Build Program
         run: |
           cd asymmetric_spl
           anchor build
 
-      - name: Test
+      - name: Run Tests
         run: |
           cd asymmetric_spl
           anchor test
