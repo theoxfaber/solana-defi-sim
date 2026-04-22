@@ -1,0 +1,5 @@
+solana
+solders
+aiohttp
+base58
+python-dotenv

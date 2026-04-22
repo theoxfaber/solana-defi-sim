@@ -1,0 +1,31 @@
+# Build Artifacts
+/node_modules/
+/asymmetric_spl/target/
+/vol_sim_agent/__pycache__/
+*.pyc
+
+# Environment & Private Keys (CRITICAL SECURITY)
+.env
+.env.*
+*-keypair.json
+simulation_config.json
+simulator_keypair.json
+workspace-keypair.json
+asymmetric_spl-keypair.json
+
+# IDE & Logs
+.vscode/
+.idea/
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+*.log
+
+# Workspace Specific
+/.gemini/
+/artifacts/
+/brain/
+/knowledge/
+/scratch/
