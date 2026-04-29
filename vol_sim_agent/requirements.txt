@@ -5,3 +5,8 @@ base58
 python-dotenv
 rich
 pytest
+pytest-cov
+mypy
+pylint
+black
+isort
