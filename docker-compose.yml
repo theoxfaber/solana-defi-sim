@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  # The Python Volatility Simulation Agent
+  vol-sim-agent:
+    build:
+      context: ./vol_sim_agent
+      dockerfile: Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./simulation_config.json:/app/simulation_config.json
+    network_mode: "host" # Needs host network to reach local solana-test-validator if running locally
+
+  # The Node.js Liquidity Manager (requires pre-configured env)
+  liquidity-manager:
+    image: node:18-alpine
+    working_dir: /app
+    volumes:
+      - ./liquidity_manager:/app
+    command: sh -c "npm install && node deploy_pool.js"
+    network_mode: "host"
