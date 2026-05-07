@@ -158,7 +158,7 @@ pub mod asymmetric_spl {
             authority: ctx.accounts.from.to_account_info(),
         };
         let cpi_program = ctx.accounts.token_program.to_account_info();
-        let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+        let cpi_ctx = CpiContext::new(cpi_program.key(), cpi_accounts);
 
         token::transfer(cpi_ctx, amount)?;
 
@@ -223,14 +223,6 @@ pub struct ClaimAuthority<'info> {
 
 #[derive(Accounts)]
 pub struct SetWalletStatus<'info> {
-    #[account(
-        init_if_needed,
-        payer = authority,
-        space = 8 + WalletEntry::INIT_SPACE,
-        seeds = [b"wallet", allowlist.key().as_ref(), target_wallet.key().as_ref()],
-        bump
-    )]
-    pub wallet_entry: Account<'info, WalletEntry>,
     /// CHECK: Target wallet being allowed/blocked — no data read
     pub target_wallet: UncheckedAccount<'info>,
     #[account(
@@ -240,6 +232,14 @@ pub struct SetWalletStatus<'info> {
         bump = allowlist.bump,
     )]
     pub allowlist: Account<'info, Allowlist>,
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 8 + WalletEntry::INIT_SPACE,
+        seeds = [b"wallet", allowlist.key().as_ref(), target_wallet.key().as_ref()],
+        bump
+    )]
+    pub wallet_entry: Account<'info, WalletEntry>,
     #[account(mut)]
     pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
