@@ -2,7 +2,7 @@
 members = [
     "programs/asymmetric_spl"
 ]
-resolver = "2"
+resolver = "1"
 
 [profile.release]
 overflow-checks = true
