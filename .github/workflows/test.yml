@@ -95,32 +95,32 @@ jobs:
         with:
           workspaces: asymmetric_spl
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
       - name: Install Anchor
         run: |
           set -e
-          export PATH="$HOME/.avm/bin:$HOME/.cargo/bin:$PATH"
-          if ! command -v anchor &> /dev/null; then
-            echo "Installing Anchor via avm..."
-            cargo install --git https://github.com/coral-xyz/anchor avm --force --locked
-            avm install 0.30.1
-            avm use 0.30.1
-          fi
-          echo "$HOME/.avm/bin" >> $GITHUB_PATH
-          anchor --version
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          avm install 1.0.0
+          avm use 1.0.0
 
       - name: Generate Keypair
         run: |
-          solana-keygen new --no-bip39-passphrase --silent
-          solana config set --url localhost
+          solana-keygen new --no-bip39-passphrase --outfile ~/.config/solana/id.json || true
+          solana config set --keypair ~/.config/solana/id.json
 
       - name: Install Test Dependencies
         run: |
           cd asymmetric_spl
-          npm ci --prefer-offline --no-audit
+          npm install
 
       - name: Build Program
         run: |
           cd asymmetric_spl
+          rm -f Cargo.lock
           anchor build
 
       - name: Run Tests
