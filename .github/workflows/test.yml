@@ -121,6 +121,7 @@ jobs:
       - name: Build Program
         run: |
           cd asymmetric_spl
+          rm -f Cargo.lock
           anchor build --verifiable
 
       - name: Run Tests
