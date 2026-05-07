@@ -17,6 +17,7 @@ permissions:
 env:
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # -----------------------------------------------------------------------
@@ -41,11 +42,13 @@ jobs:
       - name: Check Formatting
         run: |
           cd asymmetric_spl
+          rm -f Cargo.lock
           cargo fmt -- --check
 
       - name: Run Clippy Linter
         run: |
           cd asymmetric_spl
+          rm -f Cargo.lock
           cargo clippy --all-targets --all-features -- -D warnings
 
   # -----------------------------------------------------------------------
@@ -120,11 +123,13 @@ jobs:
       - name: Build Program
         run: |
           cd asymmetric_spl
+          rm -f Cargo.lock
           anchor build
 
       - name: Run Tests
         run: |
           cd asymmetric_spl
+          rm -f Cargo.lock
           anchor test
 
       - name: Upload Build Artifacts
@@ -269,7 +274,7 @@ jobs:
           output: 'trivy-results.sarif'
 
       - name: Upload Trivy Results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'

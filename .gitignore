@@ -22,4 +22,3 @@ logs/
 *.log
 
 # Package locks (regenerated on install)
-package-lock.json
