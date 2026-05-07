@@ -22,3 +22,4 @@ logs/
 *.log
 
 # Package locks (regenerated on install)
+Cargo.lock
