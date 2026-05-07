@@ -12,12 +12,12 @@ import time
 from collections import deque
 from typing import Any
 
-from rich.table import Table
-from rich.panel import Panel
-from rich.layout import Layout
-from rich.text import Text
-from rich.progress_bar import ProgressBar
 from rich import box
+from rich.layout import Layout
+from rich.panel import Panel
+from rich.progress_bar import ProgressBar
+from rich.table import Table
+from rich.text import Text
 
 
 class MetricsTracker:

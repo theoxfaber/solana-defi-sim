@@ -105,8 +105,8 @@ class TestMetricsTracker:
 class TestSimulationConfig:
     def _make_config(self, overrides=None):
         """Create a minimal valid config dict."""
-        from solders.keypair import Keypair
         import base58
+        from solders.keypair import Keypair
 
         kp = Keypair()
         config = {
