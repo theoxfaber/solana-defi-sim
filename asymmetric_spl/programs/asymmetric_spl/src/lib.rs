@@ -1,6 +1,7 @@
 #![allow(clippy::diverging_sub_expression)]
 
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 declare_id!("76vuoVBk8VtxGHd2BVeTFq3n3aSAFtqzKUncrgrczSNK");
