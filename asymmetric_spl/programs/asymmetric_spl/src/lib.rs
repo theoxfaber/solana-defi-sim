@@ -24,7 +24,7 @@ pub mod asymmetric_spl {
         allowlist.is_enabled = true;
         allowlist.max_transfer = 0; // 0 = unlimited
         allowlist.bump = ctx.bumps.allowlist;
-        
+
         emit!(AllowlistInitialized {
             authority: ctx.accounts.authority.key(),
         });
@@ -54,7 +54,7 @@ pub mod asymmetric_spl {
     pub fn claim_authority(ctx: Context<ClaimAuthority>) -> Result<()> {
         let allowlist = &mut ctx.accounts.allowlist;
         let old_authority = allowlist.authority;
-        
+
         allowlist.authority = allowlist.pending_authority;
         allowlist.pending_authority = Pubkey::default();
 
@@ -132,7 +132,10 @@ pub mod asymmetric_spl {
 
         // Check max transfer limit
         if allowlist.max_transfer > 0 {
-            require!(amount <= allowlist.max_transfer, ErrorCode::ExceedsMaxTransfer);
+            require!(
+                amount <= allowlist.max_transfer,
+                ErrorCode::ExceedsMaxTransfer
+            );
         }
 
         // Liquidity Gatekeeper Logic
@@ -156,7 +159,7 @@ pub mod asymmetric_spl {
         };
         let cpi_program = ctx.accounts.token_program.to_account_info();
         let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
-        
+
         token::transfer(cpi_ctx, amount)?;
 
         Ok(())
@@ -276,13 +279,13 @@ pub struct ConditionalTransfer<'info> {
     pub from_token_account: Account<'info, TokenAccount>,
     #[account(mut)]
     pub to_token_account: Account<'info, TokenAccount>,
-    
+
     #[account(
         seeds = [b"allowlist"],
         bump = allowlist.bump,
     )]
     pub allowlist: Account<'info, Allowlist>,
-    
+
     #[account(
         seeds = [b"wallet", allowlist.key().as_ref(), from.key().as_ref()],
         bump = wallet_entry.bump

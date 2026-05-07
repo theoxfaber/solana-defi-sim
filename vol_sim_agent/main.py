@@ -63,6 +63,7 @@ logger = logging.getLogger("vol_sim_agent")
 @dataclass
 class PhaseConfig:
     """Configuration for a single market simulation phase."""
+
     name: str
     duration_secs: float
     num_trades: int
@@ -72,6 +73,7 @@ class PhaseConfig:
 @dataclass
 class SimulationConfig:
     """Parsed and validated simulation configuration."""
+
     rpc_url: str
     token_mint: Pubkey
     pool_wallet: Keypair
@@ -89,20 +91,28 @@ class SimulationConfig:
         with open(path, "r") as f:
             raw = json.load(f)
 
-        required = ["TOKEN_MINT", "POOL_WALLET_PRIVATE_KEY", "ALLOWLIST_PDA",
-                     "CHILD_WALLETS", "DECIMALS", "RPC_URL"]
+        required = [
+            "TOKEN_MINT",
+            "POOL_WALLET_PRIVATE_KEY",
+            "ALLOWLIST_PDA",
+            "CHILD_WALLETS",
+            "DECIMALS",
+            "RPC_URL",
+        ]
         missing = [k for k in required if k not in raw]
         if missing:
             raise ValueError(f"Missing required config keys: {missing}")
 
         phases = []
         for p in raw.get("PHASES", []):
-            phases.append(PhaseConfig(
-                name=p["name"],
-                duration_secs=p["duration_secs"],
-                num_trades=p["num_trades"],
-                action=p["action"],
-            ))
+            phases.append(
+                PhaseConfig(
+                    name=p["name"],
+                    duration_secs=p["duration_secs"],
+                    num_trades=p["num_trades"],
+                    action=p["action"],
+                )
+            )
 
         # Default phases if none configured
         if not phases:
@@ -120,11 +130,12 @@ class SimulationConfig:
             pool_wallet=Keypair.from_base58_string(raw["POOL_WALLET_PRIVATE_KEY"]),
             authority_pubkey=Pubkey.from_string(raw.get("AUTHORITY_PUBLIC_KEY", "")),
             allowlist_pda=Pubkey.from_string(raw["ALLOWLIST_PDA"]),
-            program_id=Pubkey.from_string(raw.get("PROGRAM_ID", "76vuoVBk8VtxGHd2BVeTFq3n3aSAFtqzKUncrgrczSNK")),
+            program_id=Pubkey.from_string(
+                raw.get("PROGRAM_ID", "76vuoVBk8VtxGHd2BVeTFq3n3aSAFtqzKUncrgrczSNK")
+            ),
             decimals=raw["DECIMALS"],
             child_wallets=[
-                Keypair.from_base58_string(w["private_key"])
-                for w in raw["CHILD_WALLETS"]
+                Keypair.from_base58_string(w["private_key"]) for w in raw["CHILD_WALLETS"]
             ],
             phases=phases,
             mode=raw.get("MODE", "LIVE"),
@@ -258,9 +269,7 @@ class VolSimAgent:
     # ------------------------------------------------------------------
     # Trade Execution (via Anchor Program)
     # ------------------------------------------------------------------
-    async def execute_trade(
-        self, wallet: Keypair, action: str, amount: int
-    ) -> bool:
+    async def execute_trade(self, wallet: Keypair, action: str, amount: int) -> bool:
         """Execute a single gated transfer through the Anchor program."""
         try:
             blockhash = (await self.client.get_latest_blockhash()).value.blockhash
@@ -285,9 +294,7 @@ class VolSimAgent:
                     )[0],
                     amount=amount,
                 )
-                msg = MessageV0.try_compile(
-                    self.config.pool_wallet.pubkey(), [ix], [], blockhash
-                )
+                msg = MessageV0.try_compile(self.config.pool_wallet.pubkey(), [ix], [], blockhash)
                 tx = VersionedTransaction(msg, [self.config.pool_wallet])
             else:
                 # Child → Pool (child wallet signs)
@@ -322,7 +329,9 @@ class VolSimAgent:
         """Run a single market simulation phase."""
         self.metrics.current_phase = phase.name
         logger.info(f"{'═' * 50}")
-        logger.info(f"  {phase.name.upper()} PHASE — {phase.num_trades} trades over {phase.duration_secs}s ({phase.action})")
+        logger.info(
+            f"  {phase.name.upper()} PHASE — {phase.num_trades} trades over {phase.duration_secs}s ({phase.action})"
+        )
         logger.info(f"{'═' * 50}")
 
         delay = phase.duration_secs / max(phase.num_trades, 1)
@@ -335,7 +344,7 @@ class VolSimAgent:
             await self._check_config_reload()
 
             wallet = random.choice(self.config.child_wallets)
-            amount = random.randint(100, 1000) * (10 ** self.config.decimals)
+            amount = random.randint(100, 1000) * (10**self.config.decimals)
             await self.execute_trade(wallet, phase.action, amount)
             await asyncio.sleep(delay)
 
@@ -393,9 +402,7 @@ async def run_verification(config: SimulationConfig) -> None:
 
     sample = config.child_wallets[0]
     sample_ata = get_associated_token_address(sample.pubkey(), config.token_mint)
-    pool_ata = get_associated_token_address(
-        config.pool_wallet.pubkey(), config.token_mint
-    )
+    pool_ata = get_associated_token_address(config.pool_wallet.pubkey(), config.token_mint)
 
     pool_entry_pda, _ = derive_wallet_entry_pda(
         config.program_id, config.allowlist_pda, config.pool_wallet.pubkey()
@@ -408,10 +415,11 @@ async def run_verification(config: SimulationConfig) -> None:
         to_ata=sample_ata,
         allowlist_pda=config.allowlist_pda,
         wallet_entry_pda=pool_entry_pda,
-        amount=1000 * (10 ** config.decimals),
+        amount=1000 * (10**config.decimals),
     )
 
     from solders.hash import Hash
+
     mock_blockhash = Hash.from_string("11111111111111111111111111111111")
     msg = MessageV0.try_compile(config.pool_wallet.pubkey(), [ix], [], mock_blockhash)
     tx = VersionedTransaction(msg, [config.pool_wallet])
@@ -428,24 +436,26 @@ async def run_verification(config: SimulationConfig) -> None:
 # Entry Point
 # ============================================================================
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Solana DeFi Stress Simulator — Volatility Agent"
+    parser = argparse.ArgumentParser(description="Solana DeFi Stress Simulator — Volatility Agent")
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Dry-run: build and sign transactions without broadcasting",
     )
     parser.add_argument(
-        "--verify", action="store_true",
-        help="Dry-run: build and sign transactions without broadcasting"
+        "--config",
+        type=str,
+        default=None,
+        help="Path to simulation_config.json (default: ../simulation_config.json)",
     )
     parser.add_argument(
-        "--config", type=str, default=None,
-        help="Path to simulation_config.json (default: ../simulation_config.json)"
+        "--export",
+        type=str,
+        default=None,
+        help="Directory to export simulation results JSON after completion",
     )
     parser.add_argument(
-        "--export", type=str, default=None,
-        help="Directory to export simulation results JSON after completion"
-    )
-    parser.add_argument(
-        "--no-dashboard", action="store_true",
-        help="Disable the live TUI dashboard (log-only mode)"
+        "--no-dashboard", action="store_true", help="Disable the live TUI dashboard (log-only mode)"
     )
     return parser.parse_args()
 
@@ -485,6 +495,7 @@ def main() -> None:
         from rich.live import Live
 
         with Live(metrics.generate_dashboard(), refresh_per_second=4) as live:
+
             async def run_with_dashboard():
                 run_task = asyncio.create_task(agent.run())
                 while not run_task.done():

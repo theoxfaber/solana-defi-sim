@@ -33,9 +33,7 @@ class MetricsTracker:
         self.tps_window: deque[float] = deque(maxlen=100)
         self.trade_log: list[dict[str, Any]] = []
 
-    def record_trade(
-        self, phase: str, success: bool, latency_ms: float
-    ) -> None:
+    def record_trade(self, phase: str, success: bool, latency_ms: float) -> None:
         """Record a trade result with its phase, outcome, and latency."""
         if phase not in self.phase_stats:
             self.phase_stats[phase] = {"success": 0, "failure": 0}
@@ -51,12 +49,14 @@ class MetricsTracker:
             self.latencies.append(latency_ms)
         self.tps_window.append(time.time())
 
-        self.trade_log.append({
-            "timestamp": time.time(),
-            "phase": phase,
-            "success": success,
-            "latency_ms": round(latency_ms, 2),
-        })
+        self.trade_log.append(
+            {
+                "timestamp": time.time(),
+                "phase": phase,
+                "success": success,
+                "latency_ms": round(latency_ms, 2),
+            }
+        )
 
     def get_percentile(self, p: float) -> float:
         """Get the p-th percentile of recorded latencies."""
@@ -93,9 +93,7 @@ class MetricsTracker:
                 "total_trades": total,
                 "successful": self.total_success,
                 "failed": self.total_failure,
-                "success_rate": round(
-                    (self.total_success / total * 100) if total > 0 else 0, 2
-                ),
+                "success_rate": round((self.total_success / total * 100) if total > 0 else 0, 2),
                 "avg_tps": round(total / elapsed, 2) if elapsed > 0 else 0,
             },
             "latency": {
@@ -142,9 +140,7 @@ class MetricsTracker:
             f"TPS: [bold green]{self.get_tps()}[/]  │  "
             f"Trades: [bold]{total}[/]"
         )
-        layout["header"].update(
-            Panel(header_text, style="white on #1a1a3e", box=box.HEAVY)
-        )
+        layout["header"].update(Panel(header_text, style="white on #1a1a3e", box=box.HEAVY))
 
         # --- Stats Table ---
         table = Table(
@@ -194,9 +190,13 @@ class MetricsTracker:
         if total > 0:
             rate = self.total_success / total * 100
             health = (
-                f"[bold green]● HEALTHY ({rate:.0f}%)[/]" if rate >= 95
-                else f"[bold yellow]● DEGRADED ({rate:.0f}%)[/]" if rate >= 80
-                else f"[bold red]● UNHEALTHY ({rate:.0f}%)[/]"
+                f"[bold green]● HEALTHY ({rate:.0f}%)[/]"
+                if rate >= 95
+                else (
+                    f"[bold yellow]● DEGRADED ({rate:.0f}%)[/]"
+                    if rate >= 80
+                    else f"[bold red]● UNHEALTHY ({rate:.0f}%)[/]"
+                )
             )
         else:
             health = "[dim]● IDLE[/]"

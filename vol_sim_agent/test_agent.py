@@ -44,7 +44,7 @@ class TestMetricsTracker:
         # Add known latencies
         for lat in [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]:
             m.record_trade("Test", True, lat)
-        
+
         p50 = m.get_percentile(50)
         p99 = m.get_percentile(99)
         assert 50 <= p50 <= 60  # Median should be around 50-60
@@ -116,9 +116,7 @@ class TestSimulationConfig:
             "AUTHORITY_PUBLIC_KEY": str(kp.pubkey()),
             "ALLOWLIST_PDA": str(kp.pubkey()),
             "PROGRAM_ID": "76vuoVBk8VtxGHd2BVeTFq3n3aSAFtqzKUncrgrczSNK",
-            "CHILD_WALLETS": [
-                {"pubkey": str(Keypair().pubkey()), "private_key": str(Keypair())}
-            ],
+            "CHILD_WALLETS": [{"pubkey": str(Keypair().pubkey()), "private_key": str(Keypair())}],
             "DECIMALS": 6,
             "RPC_URL": "http://127.0.0.1:8899",
             "MODE": "VERIFICATION",
@@ -129,7 +127,7 @@ class TestSimulationConfig:
 
     def test_loads_valid_config(self):
         from main import SimulationConfig
-        
+
         config_dict = self._make_config()
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(config_dict, f)
@@ -144,12 +142,10 @@ class TestSimulationConfig:
 
     def test_custom_phases(self):
         from main import SimulationConfig
-        
-        config_dict = self._make_config({
-            "PHASES": [
-                {"name": "Custom", "duration_secs": 1, "num_trades": 2, "action": "buy"}
-            ]
-        })
+
+        config_dict = self._make_config(
+            {"PHASES": [{"name": "Custom", "duration_secs": 1, "num_trades": 2, "action": "buy"}]}
+        )
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(config_dict, f)
             f.flush()
@@ -161,7 +157,7 @@ class TestSimulationConfig:
 
     def test_missing_keys_raises(self):
         from main import SimulationConfig
-        
+
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump({"RPC_URL": "localhost"}, f)
             f.flush()
@@ -176,7 +172,7 @@ class TestSimulationConfig:
 class TestAnchorDiscriminator:
     def test_known_discriminators(self):
         from main import get_anchor_discriminator
-        
+
         # These are the known Anchor discriminators for our program
         init_disc = get_anchor_discriminator("initialize_allowlist")
         assert len(init_disc) == 8
@@ -188,7 +184,7 @@ class TestAnchorDiscriminator:
 
     def test_discriminator_uniqueness(self):
         from main import get_anchor_discriminator
-        
+
         names = [
             "initialize_allowlist",
             "set_wallet_status",
