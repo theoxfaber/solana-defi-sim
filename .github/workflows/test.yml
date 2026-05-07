@@ -119,12 +119,22 @@ jobs:
 
       - name: Build Program
         run: |
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$HOME/.avm/bin:$HOME/.cargo/bin:$PATH"
+          echo "PATH: $PATH"
+          which cargo || echo "cargo not found"
+          cargo --version || echo "cargo version failed"
+          which solana || echo "solana not found"
+          solana --version || echo "solana version failed"
+          which anchor || echo "anchor not found"
+          anchor --version || echo "anchor version failed"
+          
           cd asymmetric_spl
           rm -f Cargo.lock
           anchor build --ignore-keys
 
       - name: Run Tests
         run: |
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$HOME/.avm/bin:$HOME/.cargo/bin:$PATH"
           cd asymmetric_spl
           anchor test --ignore-keys
 
