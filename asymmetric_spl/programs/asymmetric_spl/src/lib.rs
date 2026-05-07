@@ -1,3 +1,5 @@
+#![allow(clippy::diverging_sub_expression)]
+
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
@@ -9,7 +11,6 @@ declare_id!("76vuoVBk8VtxGHd2BVeTFq3n3aSAFtqzKUncrgrczSNK");
 /// Only wallets explicitly whitelisted via `set_wallet_status` can execute
 /// transfers through `conditional_transfer`. Authority management uses a
 /// two-step propose/claim rotation pattern for safety.
-#[allow(clippy::diverging_sub_expression)]
 #[program]
 pub mod asymmetric_spl {
     use super::*;
